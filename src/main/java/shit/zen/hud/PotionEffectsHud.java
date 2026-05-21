@@ -23,68 +23,80 @@ import shit.zen.event.EventTarget;
 public class PotionEffectsHud
 extends HudElement {
     public static final class EffectEntry {
-        public final PotionEffectsHud parent;
-        public MobEffectInstance instance;
-        public String effectName = "";
-        public String durationText = "";
-        public String amplifierText = "";
-        public int originalDuration = 1;
+        public final PotionEffectsHud outer;
+        public MobEffectInstance effectInstance;
+        public long originalDuration;
+        public String effectName;
+        public String durationText;
+        public String amplifierText;
         public final shit.zen.utils.animation.SmoothAnimationTimer fadeAnim = new shit.zen.utils.animation.SmoothAnimationTimer();
         public final shit.zen.utils.animation.SmoothAnimationTimer heightAnim = new shit.zen.utils.animation.SmoothAnimationTimer();
         public final shit.zen.utils.animation.SmoothAnimationTimer widthAnim = new shit.zen.utils.animation.SmoothAnimationTimer();
-        public float alpha = 1.0f;
-        public float targetY;
-        public float currentY;
         public boolean removing = false;
         public boolean visible = true;
 
-        public EffectEntry(PotionEffectsHud parent, MobEffectInstance instance) {
-            this.parent = parent;
-            this.instance = instance;
-            this.originalDuration = Math.max(1, instance.getDuration());
-            this.updateText();
+        public EffectEntry(PotionEffectsHud outer, MobEffectInstance instance) {
+            this.outer = outer;
+            this.effectInstance = instance;
+            this.originalDuration = instance.getDuration();
+            this.refreshDisplayText();
+            this.heightAnim.setCurrentValue(0.0);
+            this.widthAnim.setCurrentValue(0.0);
+        }
+
+        public int getDuration() {
+            return this.effectInstance.getDuration();
         }
 
         public net.minecraft.world.effect.MobEffect getEffect() {
-            return this.instance.getEffect();
+            return this.effectInstance.getEffect();
         }
 
         public void updateEffect(MobEffectInstance instance) {
-            this.instance = instance;
-            this.updateText();
+            if (instance.getDuration() > this.effectInstance.getDuration()) {
+                this.originalDuration = instance.getDuration();
+            }
+            this.effectInstance = instance;
+            this.refreshDisplayText();
         }
 
-        private void updateText() {
-            this.effectName = this.instance.getEffect().getDisplayName().getString();
-            this.durationText = net.minecraft.world.effect.MobEffectUtil.formatDuration(this.instance, 1.0f).getString();
-            int amp = this.instance.getAmplifier();
-            this.amplifierText = amp > 0 ? String.valueOf(amp + 1) : "";
-        }
-
-        public void show(float targetHeight) {
-            this.visible = false;
-            this.heightAnim.animate(targetHeight, 0.2, shit.zen.utils.math.Easings.EASE_OUT_POW3);
-            this.widthAnim.animate(100.0, 0.2, shit.zen.utils.math.Easings.EASE_OUT_POW3);
+        public void refreshDisplayText() {
+            this.effectName = this.effectInstance.getEffect().getDisplayName().getString();
+            this.durationText = this.outer.formatDuration(this.effectInstance);
+            this.amplifierText = this.outer.formatAmplifier(this.effectInstance.getAmplifier() + 1);
         }
 
         public float getTotalWidth() {
-            return this.widthAnim.getValueF();
+            float iconBoxWidth = 22.0f;
+            float padding = 5.0f;
+            float nameWidth = GlHelper.getStringWidth(this.effectName, this.outer.effectNameFont);
+            float durationWidth = GlHelper.getStringWidth(this.durationText, this.outer.amplifierFont);
+            return iconBoxWidth + nameWidth + durationWidth + padding * 3.0f;
+        }
+
+        public void show(float targetHeight) {
+            this.heightAnim.animate(1.0, 0.3, shit.zen.utils.math.Easings.EASE_OUT_POW3);
+            this.widthAnim.animate(targetHeight, 0.3, shit.zen.utils.math.Easings.EASE_OUT_POW3);
         }
 
         public void startRemove() {
+            if (this.removing) return;
             this.removing = true;
+            this.heightAnim.animate(0.0, 0.2, shit.zen.utils.math.Easings.EASE_IN_POW3);
+            this.widthAnim.animate(0.0, 0.2, shit.zen.utils.math.Easings.EASE_IN_POW3);
         }
 
         public boolean isRemoveDone() {
-            return this.removing && this.alpha <= 0.01f;
+            return this.removing && this.heightAnim.isDone() && this.widthAnim.isDone();
         }
 
         public void tick() {
-            float target = this.removing ? 0.0f : 1.0f;
-            this.alpha += (target - this.alpha) * 0.18f;
             this.fadeAnim.tick();
             this.heightAnim.tick();
             this.widthAnim.tick();
+            if (!this.effectInstance.getEffect().isInstantenous()) {
+                this.refreshDisplayText();
+            }
         }
     }
 
@@ -184,12 +196,12 @@ extends HudElement {
                 currentY += animWidth + (animWidth > 0.0f ? spacing : 0.0f);
                 continue;
             }
-            int effectColor = this.getEffectColor(entry.instance.getEffect());
+            int effectColor = this.getEffectColor(entry.effectInstance.getEffect());
             float barWidth = totalWidth - iconBoxWidth;
             float barX = x + iconBoxWidth;
             this.iconBgPaint.setColor(ColorUtil.fromARGB(30, 30, 35, (int)(80.0f * animHeight)));
             drawContext.drawRoundedRect(RoundedRectangle.ofXYWHRadii(barX, entryY, barWidth, animWidth, new float[]{0.0f, 0.0f, 4.5f, 4.5f, 4.5f, 4.5f, 0.0f, 0.0f}), this.iconBgPaint);
-            float durationPct = entry.instance.isInfiniteDuration() ? 1.0f : (float)entry.instance.getDuration() / (float)entry.originalDuration;
+            float durationPct = entry.effectInstance.isInfiniteDuration() ? 1.0f : (float)entry.effectInstance.getDuration() / (float)entry.originalDuration;
             this.effectIconPaint.setColor(ColorUtil.fromARGB(effectColor >> 16 & 0xFF, effectColor >> 8 & 0xFF, effectColor & 0xFF, (int)(140.0f * animHeight)));
             if (durationPct > 0.0f) {
                 drawContext.drawRoundedRect(RoundedRectangle.ofXYWHRadii(barX, entryY, barWidth * durationPct, animWidth, new float[]{0.0f, 0.0f, cornerRadius * durationPct, cornerRadius * durationPct, cornerRadius * durationPct, cornerRadius * durationPct, 0.0f, 0.0f}), this.effectIconPaint);
